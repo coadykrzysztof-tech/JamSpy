@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="JamSpy" />
+  <meta name="theme-color" content="#0f131d" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+  <link rel="icon" type="image/png" href="./apple-touch-icon.png" />
+  <title>JamSpy — Live Song Key &amp; Piano Jam Guide</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Bar -->
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <path d="M3 12h2.5l2-5 3.5 10 3.5-12 2.5 7H21" />
+          </svg>
+        </span>
+        <div>
+          <h1 class="brand-title">JamSpy</h1>
+          <p class="brand-subtitle">Live Key &amp; Jam Guide</p>
+        </div>
+      </div>
+
+      <label class="manual-picker-wrap" title="Explore any key manually">
+        <span class="sr-only">Pick a key manually</span>
+        <select id="manualKeySelect" class="manual-select" aria-label="Pick a key manually"></select>
+      </label>
+    </header>
+
+    <!-- Listen / Spy Control Section -->
+    <section class="spy-section" aria-label="Song Listener">
+      <div class="listen-ring-wrap">
+        <svg class="progress-ring" viewBox="0 0 156 156" aria-hidden="true">
+          <circle class="progress-ring-track" cx="78" cy="78" r="68" />
+          <circle id="progressRingFill" class="progress-ring-fill" cx="78" cy="78" r="68" />
+        </svg>
+
+        <button id="listenBtn" class="listen-btn" type="button">
+          <span id="listenBtnIcon" class="listen-btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="22" />
+            </svg>
+          </span>
+          <span id="listenBtnLabel" class="listen-btn-label">Tap to Listen</span>
+          <span id="listenBtnSub" class="listen-btn-sub">12 sec room scan</span>
+        </button>
+      </div>
+
+      <!-- Live Sound Meter & Status Message -->
+      <div class="listen-feedback">
+        <div id="soundMeter" class="sound-meter" aria-hidden="true">
+          <span class="meter-bar"></span>
+          <span class="meter-bar"></span>
+          <span class="meter-bar"></span>
+          <span class="meter-bar"></span>
+          <span class="meter-bar"></span>
+          <span class="meter-bar"></span>
+          <span class="meter-bar"></span>
+        </div>
+        <p id="statusText" class="status-text">
+          Play a song or instrument nearby and tap <strong>Listen</strong>
+        </p>
+        <button id="finishEarlyBtn" class="finish-early-btn hidden" type="button">
+          Lock Key Now
+        </button>
+      </div>
+    </section>
+
+    <!-- Key Reveal Card -->
+    <section id="keyCard" class="card key-card" aria-live="polite">
+      <div class="key-card-top">
+        <span id="keySourceBadge" class="badge badge-preview">Sample Key Preview</span>
+        <span id="confidenceBadge" class="confidence-pill hidden">Strong Lock</span>
+      </div>
+
+      <div class="key-main-row">
+        <div>
+          <div id="keyNameDisplay" class="key-name">G Major</div>
+          <p id="scaleNotesDisplay" class="scale-notes-line">
+            Notes: G · A · B · C · D · E · F#
+          </p>
+        </div>
+
+        <button id="playScaleBtn" class="action-pill-btn" type="button" title="Hear this scale on piano">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+            <path d="M8 5.14v14l11-7-11-7z" />
+          </svg>
+          <span>Hear Key</span>
+        </button>
+      </div>
+
+      <div class="cousin-row">
+        <span class="cousin-label">Same keys on piano:</span>
+        <button id="cousinKeyBtn" class="cousin-btn" type="button">
+          Switch to E Minor ⇄
+        </button>
+      </div>
+    </section>
+
+    <!-- Interactive Piano Cheat Sheet -->
+    <section class="card piano-card" aria-label="Interactive Piano Keyboard">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Safe Keys to Play</h2>
+          <p id="pianoLegendText" class="section-hint">
+            Lit gold keys are in key · Tap any key to hear it
+          </p>
+        </div>
+        <button id="clearChordBtn" class="ghost-small-btn hidden" type="button">
+          Show Full Scale
+        </button>
+      </div>
+
+      <div class="piano-frame">
+        <div id="pianoKeyboard" class="piano-keyboard"></div>
+      </div>
+
+      <div class="piano-legend">
+        <span class="legend-item"><i class="dot dot-root"></i> Home Note</span>
+        <span class="legend-item"><i class="dot dot-scale"></i> In Key</span>
+        <span class="legend-item"><i class="dot dot-chord"></i> Selected Chord</span>
+      </div>
+    </section>
+
+    <!-- 6 Main Jam Chords Grid -->
+    <section class="card chords-card" aria-label="Main Chords in This Key">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Main Jam Chords</h2>
+          <p class="section-hint">
+            Tap any chord to hear it &amp; see where your fingers go
+          </p>
+        </div>
+      </div>
+
+      <div id="chordsGrid" class="chords-grid"></div>
+
+      <div id="chordDetailBanner" class="chord-detail-banner hidden">
+        <span id="chordDetailTitle" class="chord-detail-title">G Major:</span>
+        <span id="chordDetailNotes" class="chord-detail-notes">Press G – B – D</span>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="./app.js?v=3"></script>
+</body>
+</html>
