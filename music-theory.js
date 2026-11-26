@@ -224,53 +224,68 @@ function scoreChordFamilyFit(chordHistogram, rootPulseHist, root, mode) {
     };
 
     if (mode === 'major') {
-      // Core 4-chord sum: 1.34 + 1.14 + 1.14 + 1.00 = 4.62
+      const iShare = w(0, 'maj');
+      const iiShare = w(2, 'min');
+      const iiiShare = w(4, 'min');
+      const ivShare = w(5, 'maj');
       const vShare = w(7, 'maj');
       const viShare = w(9, 'min');
-      const iiShare = w(2, 'min');
-      const ivShare = w(5, 'maj');
-      const iShare = w(0, 'maj');
+      const bVIIShare = w(10, 'maj');
 
-      // Detect i - bIII - bVII minor loops (like Am - C - G in Blown Away) masquerading as ii - IV - I in Major
-      // when Major's own V and vi chords never appear at all!
+      const inFamilyShare = iShare + iiShare + iiiShare + ivShare + vShare + viShare + bVIIShare;
+      const foreignShare = Math.max(0, 1 - inFamilyShare);
+
+      // Echo-tolerant detection of i - bIII - bVII minor loops (like Am - C - G in Blown Away)
+      // masquerading as ii - IV - I in Major when Major's V and vi are much weaker than ii!
       const missingDomAndRelPenalty =
-        iiShare >= 0.16 && ivShare >= 0.14 && iShare >= 0.18 && vShare < 0.05 && viShare < 0.05
-          ? 0.52
+        iiShare >= 0.13 && ivShare >= 0.11 && iShare >= 0.18 && iiShare > (vShare + viShare) * 1.35
+          ? 0.54
           : 0;
 
       triadScore =
-        iShare * 1.34 +  // I
-        ivShare * 1.14 + // IV
-        vShare * 1.14 +  // V
-        viShare * 1.00 + // vi
-        iiShare * 0.76 + // ii
-        w(4, 'min') * 0.74 + // iii
-        w(10, 'maj') * 0.28 - // bVII
+        iShare * 1.34 +      // I
+        ivShare * 1.14 +     // IV
+        vShare * 1.14 +      // V
+        viShare * 1.00 +     // vi
+        iiShare * 0.76 +     // ii
+        iiiShare * 0.74 +    // iii
+        bVIIShare * 0.28 -   // bVII rock borrow
+        foreignShare * 0.46 -
         missingDomAndRelPenalty;
     } else {
-      // Core 4-chord sum: 1.38 + 1.10 + 1.08 + 1.06 = 4.62 (exact parity with Major)
       const iShare = w(0, 'min');
-      const bVIShare = w(8, 'maj');
       const bIIIShare = w(3, 'maj');
+      const ivMinShare = w(5, 'min');
+      const ivMajShare = w(5, 'maj'); // Dorian IV (e.g. E Major in B Minor Hotel California)
+      const vMinShare = w(7, 'min');
+      const domMajShare = w(7, 'maj'); // Harmonic minor V (e.g. F# Major in B Minor)
+      const bVIShare = w(8, 'maj');
       const bVIIShare = w(10, 'maj');
-      const domMajShare = w(7, 'maj');
-      const harmonicCadenceBonus = (iShare >= 0.08 && domMajShare >= 0.08)
-        ? Math.min(iShare, domMajShare) * 0.85
+
+      const inFamilyShare =
+        iShare + bIIIShare + ivMinShare + ivMajShare + vMinShare + domMajShare + bVIShare + bVIIShare;
+      // Penalizes keys like F# Minor when Hotel California plays G Major & Em (foreign to F# Minor, 100% legal in B Minor!)
+      const foreignShare = Math.max(0, 1 - inFamilyShare);
+
+      const harmonicCadenceBonus = (iShare >= 0.06 && domMajShare >= 0.06)
+        ? Math.min(iShare, domMajShare) * 0.90
         : 0;
-      // Classic 3-chord modern country/rock minor loop: i - bIII - bVII (e.g. Am - C - G in Blown Away, without IV/bVI)
-      const aeolianTripletBonus = (iShare >= 0.16 && bIIIShare >= 0.14 && bVIIShare >= 0.18 && bVIShare < 0.08)
-        ? 0.36
-        : 0;
+      // Echo-tolerant 3-chord modern country/rock minor loop: i - bIII - bVII (e.g. Am - C - G in Blown Away)
+      const aeolianTripletBonus =
+        iShare >= 0.13 && bIIIShare >= 0.11 && bVIIShare >= 0.18 && bVIShare < 0.14
+          ? 0.38
+          : 0;
 
       triadScore =
         iShare * 1.38 +       // i
         bVIShare * 1.10 +     // bVI
         bVIIShare * 1.10 +    // bVII
         bIIIShare * 1.06 +    // bIII
-        w(7, 'min') * 1.08 +  // v (Dominant minor vamp, e.g. Am <-> Em in Losing My Religion)
-        w(5, 'min') * 0.94 +  // iv
-        domMajShare * 1.12 +  // V (Harmonic minor turnaround, e.g. F# in Hotel California)
-        w(5, 'maj') * 0.55 +  // IV (Dorian borrow)
+        vMinShare * 1.08 +    // v
+        ivMinShare * 0.96 +   // iv
+        domMajShare * 1.14 +  // V (Harmonic minor turnaround)
+        ivMajShare * 0.78 -   // IV (Dorian borrow)
+        foreignShare * 0.48 +
         harmonicCadenceBonus +
         aeolianTripletBonus;
     }

@@ -1,6 +1,6 @@
 // JamSpy - Microphone Key Listener & Warm Acoustic Piano Synthesizer
 
-import { midiToFreq, detectKeyFromChroma } from './music-theory.js?v=3';
+import { midiToFreq, detectKeyFromChroma } from './music-theory.js?v=4';
 
 export class AudioEngine {
   constructor() {
@@ -142,7 +142,7 @@ export class AudioEngine {
           audio: {
             echoCancellation: false,
             noiseSuppression: false,
-            autoGainControl: false
+            autoGainControl: true // Boosts quiet chords when phone is 10-15 ft across the room
           }
         });
       } catch (_) {
@@ -248,7 +248,7 @@ export class AudioEngine {
         for (let b = Math.max(0, minSpecBin - 16); b <= upperLimit; b++) {
           const db = this.freqBuffer[b];
           if (db > maxDb && b * binHz <= 1200) maxDb = db;
-          linMag[b] = db > -88 ? Math.pow(10, db / 20) : 0;
+          linMag[b] = db > -94 ? Math.pow(10, db / 20) : 0;
         }
 
         // 2. Running-sum spectral whitening to strip out drums, vocal breath, and speaker hiss
@@ -342,7 +342,7 @@ export class AudioEngine {
           }
         }
 
-        const hearingMusic = frameTotal > 1e-4 && maxDb > -75;
+        const hearingMusic = frameTotal > 3e-5 && maxDb > -82;
         if (hearingMusic) {
           this.musicalFrames++;
           currentSliceFrames++;

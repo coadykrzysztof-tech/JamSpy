@@ -5,8 +5,8 @@ import {
   getAllKeysList,
   getNoteName,
   isBlackKey
-} from './music-theory.js?v=3';
-import { AudioEngine } from './audio-engine.js?v=3';
+} from './music-theory.js?v=4';
+import { AudioEngine } from './audio-engine.js?v=4';
 
 const audio = new AudioEngine();
 
