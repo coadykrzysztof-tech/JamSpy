@@ -5,8 +5,8 @@ import {
   getAllKeysList,
   getNoteName,
   isBlackKey
-} from './music-theory.js?v=6';
-import { AudioEngine } from './audio-engine.js?v=6';
+} from './music-theory.js?v=7';
+import { AudioEngine } from './audio-engine.js?v=7';
 
 const audio = new AudioEngine();
 const STORAGE_KEY = 'jamspy_saved_songs_v1';
