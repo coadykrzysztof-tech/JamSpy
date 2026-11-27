@@ -235,11 +235,11 @@ function scoreChordFamilyFit(chordHistogram, rootPulseHist, root, mode) {
       const inFamilyShare = iShare + iiShare + iiiShare + ivShare + vShare + viShare + bVIIShare;
       const foreignShare = Math.max(0, 1 - inFamilyShare);
 
-      // Echo-tolerant detection of i - bIII - bVII minor loops (like Am - C - G in Blown Away)
+      // Echo-tolerant detection of i - bIII - bVII minor loops (like Am - C - G in Blown Away, even on 1.67-loop cutoffs!)
       // masquerading as ii - IV - I in Major when Major's V and vi are much weaker than ii!
       const missingDomAndRelPenalty =
-        iiShare >= 0.13 && ivShare >= 0.11 && iShare >= 0.18 && iiShare > (vShare + viShare) * 1.35
-          ? 0.54
+        iiShare >= 0.055 && ivShare >= 0.055 && iShare >= 0.18 && iiShare > (vShare + viShare) * 1.2
+          ? 0.62 + Math.max(0, iShare - 0.42) * 0.65
           : 0;
 
       triadScore =
@@ -272,8 +272,8 @@ function scoreChordFamilyFit(chordHistogram, rootPulseHist, root, mode) {
         : 0;
       // Echo-tolerant 3-chord modern country/rock minor loop: i - bIII - bVII (e.g. Am - C - G in Blown Away)
       const aeolianTripletBonus =
-        iShare >= 0.13 && bIIIShare >= 0.11 && bVIIShare >= 0.18 && bVIShare < 0.14
-          ? 0.38
+        iShare >= 0.055 && bIIIShare >= 0.055 && bVIIShare >= 0.18 && bVIShare < 0.14
+          ? 0.46 + Math.max(0, bVIIShare - 0.45) * 0.35
           : 0;
 
       triadScore =
@@ -545,6 +545,112 @@ export function detectKeyFromChroma(chroma, bassChroma, windowChromas = []) {
   return {
     key: getKeyDetails(winner.rootPc, winner.mode),
     confidence: rawConf,
+    confidenceLabel,
+    runnerUpKey: getKeyDetails(runnerUp.rootPc, runnerUp.mode),
+    allScores: candidates
+  };
+}
+
+/**
+ * Prevents "buzzer-flip" errors when a 12-second scan catches ~1.5 loops of a song
+ * (giving double weight to whichever chord happens to play at both the start and the buzzer).
+ * Combines full-scan analysis with sliding ~7.5-second (1-loop) windows and mid-scan consensus.
+ */
+export function detectKeyStable(chroma, bassChroma, windowChromas = [], windowBasses = []) {
+  const fullRes = detectKeyFromChroma(chroma, bassChroma, windowChromas);
+  if (!fullRes || windowChromas.length < 18) {
+    return fullRes;
+  }
+
+  const scoreBoard = new Map();
+  const firstPlaceWins = new Map();
+  let totalPolls = 0;
+
+  const addPoll = (res, weight) => {
+    if (!res || !res.allScores) return;
+    totalPolls += weight;
+    const top = res.allScores[0];
+    if (top) {
+      const topId = `${top.rootPc}:${top.mode}`;
+      firstPlaceWins.set(topId, (firstPlaceWins.get(topId) || 0) + weight);
+    }
+    for (const c of res.allScores) {
+      const id = `${c.rootPc}:${c.mode}`;
+      scoreBoard.set(id, (scoreBoard.get(id) || 0) + c.score * weight);
+    }
+  };
+
+  // Helper to sum a range [start..end) of slices
+  const evalRange = (start, end) => {
+    const subSlices = windowChromas.slice(start, end);
+    const subChroma = new Array(12).fill(0);
+    const subBass = new Array(12).fill(0);
+    for (let i = start; i < end; i++) {
+      const sc = windowChromas[i];
+      const sb = windowBasses[i];
+      for (let p = 0; p < 12; p++) {
+        subChroma[p] += sc[p];
+        if (sb) subBass[p] += sb[p];
+      }
+    }
+    return detectKeyFromChroma(subChroma, subBass, subSlices);
+  };
+
+  // 1. Full 12-second cumulative scan gets 35% weight (captures long 8-bar loops like Hotel California)
+  addPoll(fullRes, 0.35);
+
+  // 2. Full-loop (~7.3s) sliding windows + full-loop checkpoints (65% total weight)
+  // Never polls short <1-loop intros (so songs starting on IV like Fast Car wait until all 4 chords play),
+  // while stopping 1.5-loop buzzer cutoffs (like Blown Away ending on a 2nd long G) from flipping at the end!
+  const LOOP_LEN = Math.min(28, Math.max(20, Math.floor(windowChromas.length * 0.62)));
+  const windows = [];
+
+  for (let end = LOOP_LEN; end < windowChromas.length; end += 4) {
+    windows.push([0, end]);
+  }
+  const step = Math.max(3, Math.floor((windowChromas.length - LOOP_LEN) / 4));
+  for (let start = 0; start + LOOP_LEN <= windowChromas.length; start += step) {
+    windows.push([start, start + LOOP_LEN]);
+  }
+
+  const perWinWeight = 0.65 / Math.max(1, windows.length);
+  for (const [s, e] of windows) {
+    addPoll(evalRange(s, e), perWinWeight);
+  }
+
+  const merged = [];
+  scoreBoard.forEach((score, id) => {
+    const [rStr, mode] = id.split(':');
+    const leadShare = totalPolls > 0 ? (firstPlaceWins.get(id) || 0) / totalPolls : 0;
+    // Reward the key that consistently held 1st place across the scan
+    merged.push({ rootPc: Number(rStr), mode, score: score + leadShare * 0.09 });
+  });
+  merged.sort((a, b) => b.score - a.score);
+
+  const winner = merged[0];
+  if (winner.rootPc === fullRes.key.rootPc && winner.mode === fullRes.key.mode) {
+    return fullRes;
+  }
+
+  const relativePc = winner.mode === 'minor' ? (winner.rootPc + 3) % 12 : (winner.rootPc + 9) % 12;
+  const relativeMode = winner.mode === 'minor' ? 'major' : 'minor';
+  const runnerUp = merged.find(
+    (c) => !(c.rootPc === winner.rootPc && c.mode === winner.mode) &&
+           !(c.rootPc === relativePc && c.mode === relativeMode)
+  ) || merged[1];
+
+  const margin = Math.max(0, winner.score - runnerUp.score);
+  const matchRaw = fullRes.allScores.find((c) => c.rootPc === winner.rootPc && c.mode === winner.mode);
+  const rawCorr = matchRaw ? matchRaw.rawCorrelation : 0.72;
+  const conf = Math.round(Math.min(98, Math.max(58, (rawCorr * 55 + 34) + margin * 145)));
+
+  let confidenceLabel = 'Solid Match';
+  if (conf >= 84) confidenceLabel = 'Strong Lock';
+  else if (conf < 68) confidenceLabel = 'Close Call';
+
+  return {
+    key: getKeyDetails(winner.rootPc, winner.mode),
+    confidence: conf,
     confidenceLabel,
     runnerUpKey: getKeyDetails(runnerUp.rootPc, runnerUp.mode)
   };

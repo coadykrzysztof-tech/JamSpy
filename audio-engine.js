@@ -1,6 +1,6 @@
 // JamSpy - Microphone Key Listener & Warm Acoustic Piano Synthesizer
 
-import { midiToFreq, detectKeyFromChroma } from './music-theory.js?v=4';
+import { midiToFreq, detectKeyStable } from './music-theory.js?v=5';
 
 export class AudioEngine {
   constructor() {
@@ -16,6 +16,7 @@ export class AudioEngine {
     this.chromaSum = new Float64Array(12);
     this.bassChromaSum = new Float64Array(12);
     this.windowChromas = [];
+    this.windowBasses = [];
     this.musicalFrames = 0;
     this.totalFrames = 0;
   }
@@ -163,6 +164,7 @@ export class AudioEngine {
       this.chromaSum.fill(0);
       this.bassChromaSum.fill(0);
       this.windowChromas = [];
+      this.windowBasses = [];
       this.musicalFrames = 0;
       this.totalFrames = 0;
       this.isListening = true;
@@ -218,11 +220,14 @@ export class AudioEngine {
 
             let bassTotal = 0;
             for (let i = 0; i < 12; i++) bassTotal += currentSliceBass[i];
+            const normBassSlice = new Array(12).fill(0);
             if (bassTotal > 1e-6) {
               for (let i = 0; i < 12; i++) {
-                this.bassChromaSum[i] += currentSliceBass[i] / bassTotal;
+                normBassSlice[i] = currentSliceBass[i] / bassTotal;
+                this.bassChromaSum[i] += normBassSlice[i];
               }
             }
+            this.windowBasses.push(normBassSlice);
           }
 
           currentSliceChroma.fill(0);
@@ -356,10 +361,11 @@ export class AudioEngine {
 
         const level = Math.max(0, Math.min(1, (maxDb + 78) / 48));
         const liveGuess = this.windowChromas.length >= 6
-          ? detectKeyFromChroma(
+          ? detectKeyStable(
               Array.from(this.chromaSum),
               Array.from(this.bassChromaSum),
-              this.windowChromas
+              this.windowChromas,
+              this.windowBasses
             )
           : null;
 
@@ -395,6 +401,7 @@ export class AudioEngine {
     const chromaArr = Array.from(this.chromaSum);
     const bassArr = Array.from(this.bassChromaSum);
     const slices = this.windowChromas.slice();
+    const bassSlices = this.windowBasses.slice();
 
     this.cleanupStream();
 
@@ -405,7 +412,7 @@ export class AudioEngine {
       return;
     }
 
-    const result = detectKeyFromChroma(chromaArr, bassArr, slices);
+    const result = detectKeyStable(chromaArr, bassArr, slices, bassSlices);
     if (onComplete) {
       onComplete({ tooQuiet: !result, result });
     }
