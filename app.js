@@ -1,19 +1,27 @@
-// JamSpy - Main Screen Controller (Live Key Finder, Jam Guide & On-Device Saved Songs)
+// JamSpy - Main Screen Controller (Live Key Finder, Chords Heard, Solo Piano Sheet Music & Saved Songs)
 
 import {
   getKeyDetails,
   getAllKeysList,
   getNoteName,
   isBlackKey
-} from './music-theory.js?v=7';
-import { AudioEngine } from './audio-engine.js?v=7';
+} from './music-theory.js?v=8';
+import { AudioEngine } from './audio-engine.js?v=8';
+import {
+  buildPianoSketchFromScan,
+  buildDefaultSketchForKey,
+  renderSheetMusicSVG
+} from './sheet-music.js?v=8';
 
 const audio = new AudioEngine();
 const STORAGE_KEY = 'jamspy_saved_songs_v1';
 
 // App State
 let currentKey = getKeyDetails(7, 'major'); // Default preview: G Major
+let currentSketch = buildDefaultSketchForKey(currentKey);
+let activeMeasureHighlight = -1;
 let selectedChordIndex = null;
+let selectedHeardIndex = null;
 let keySourceMode = 'preview'; // 'preview' | 'live' | 'saved'
 let loadedSavedSongId = null;
 let loadedSavedSongTitle = null;
@@ -53,6 +61,17 @@ const chordDetailBanner = document.getElementById('chordDetailBanner');
 const chordDetailTitle = document.getElementById('chordDetailTitle');
 const chordDetailNotes = document.getElementById('chordDetailNotes');
 
+const heardModeBadge = document.getElementById('heardModeBadge');
+const chordsHeardFlow = document.getElementById('chordsHeardFlow');
+
+const playSketchBtn = document.getElementById('playSketchBtn');
+const playSketchIcon = document.getElementById('playSketchIcon');
+const playSketchLabel = document.getElementById('playSketchLabel');
+const printSketchBtn = document.getElementById('printSketchBtn');
+const sheetPaperTitle = document.getElementById('sheetPaperTitle');
+const sheetPaperMeta = document.getElementById('sheetPaperMeta');
+const sheetMusicCanvas = document.getElementById('sheetMusicCanvas');
+
 const savedCountBadge = document.getElementById('savedCountBadge');
 const savedEmptyState = document.getElementById('savedEmptyState');
 const savedSongsList = document.getElementById('savedSongsList');
@@ -60,7 +79,6 @@ const appRefreshBtn = document.getElementById('appRefreshBtn');
 
 const RING_CIRCUMFERENCE = 2 * Math.PI * 68;
 
-// Build 2-octave keyboard structure once (C3 = MIDI 48 through C5 = MIDI 72)
 const START_MIDI = 48;
 const END_MIDI = 72;
 const keyElementsByMidi = new Map();
@@ -100,6 +118,18 @@ function buildAutoTitle() {
   return 'Spied Song · ' + now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
+function setSketchPlayButtonState(playing) {
+  if (playing) {
+    playSketchBtn.classList.add('is-playing');
+    playSketchLabel.textContent = 'Stop';
+    playSketchIcon.innerHTML = '<rect x="6" y="6" width="12" height="12" rx="1.5" />';
+  } else {
+    playSketchBtn.classList.remove('is-playing');
+    playSketchLabel.textContent = 'Play Sketch';
+    playSketchIcon.innerHTML = '<path d="M8 5.14v14l11-7-11-7z" />';
+  }
+}
+
 function initManualPicker() {
   const allKeys = getAllKeysList();
   manualKeySelect.innerHTML = '';
@@ -122,12 +152,15 @@ function initManualPicker() {
   manualKeySelect.value = `${currentKey.rootPc}:${currentKey.mode}`;
 
   manualKeySelect.addEventListener('change', () => {
+    audio.stopSketchPlayback();
     const [pcStr, mode] = manualKeySelect.value.split(':');
     selectedChordIndex = null;
+    selectedHeardIndex = null;
     keySourceMode = 'preview';
     loadedSavedSongId = null;
     loadedSavedSongTitle = null;
     currentKey = getKeyDetails(Number(pcStr), mode);
+    currentSketch = buildDefaultSketchForKey(currentKey);
     confidenceBadge.classList.add('hidden');
     renderAll();
     audio.playChord(currentKey.chords[0].midiNotes, currentKey.chords[0].bassMidi);
@@ -186,16 +219,48 @@ function triggerPianoKeyTap(midi) {
 
 function flashChordKeys(midiNotes) {
   midiNotes.forEach((m) => {
-    const entry = keyElementsByMidi.get(m);
+    // Fold bass/high playback note into visible keyboard octave if needed for visual flash
+    let visMidi = m;
+    while (visMidi < START_MIDI) visMidi += 12;
+    while (visMidi > END_MIDI) visMidi -= 12;
+    const entry = keyElementsByMidi.get(visMidi);
     if (!entry) return;
     entry.el.classList.add('is-playing');
-    setTimeout(() => entry.el.classList.remove('is-playing'), 240);
+    setTimeout(() => entry.el.classList.remove('is-playing'), 220);
   });
+}
+
+function buildTriadObjectForRoot(rootPc, quality) {
+  const flatSpelling = currentKey.useFlats;
+  const rootName = getNoteName(rootPc, flatSpelling);
+  const thirdOffset = quality === 'min' ? 3 : 4;
+  let baseMidi = 48 + rootPc;
+  if (baseMidi < 52) baseMidi += 12;
+  if (baseMidi + 7 > 72) baseMidi -= 12;
+  const midiNotes = [baseMidi, baseMidi + thirdOffset, baseMidi + 7];
+  return {
+    symbol: quality === 'min' ? `${rootName}m` : rootName,
+    fullName: `${rootName} ${quality === 'min' ? 'Minor' : 'Major'}`,
+    midiNotes,
+    bassMidi: baseMidi - 12,
+    noteNames: midiNotes.map((m) => getNoteName(m % 12, flatSpelling))
+  };
+}
+
+function getActiveSelectedChord() {
+  if (selectedChordIndex !== null) {
+    return currentKey.chords[selectedChordIndex];
+  }
+  if (selectedHeardIndex !== null && currentSketch.chordsHeard[selectedHeardIndex]) {
+    const hc = currentSketch.chordsHeard[selectedHeardIndex];
+    return buildTriadObjectForRoot(hc.rootPc, hc.quality);
+  }
+  return null;
 }
 
 function renderPianoHighlights() {
   const scaleSet = new Set(currentKey.scalePitchClasses);
-  const activeChord = selectedChordIndex !== null ? currentKey.chords[selectedChordIndex] : null;
+  const activeChord = getActiveSelectedChord();
   const chordMidiSet = activeChord ? new Set(activeChord.midiNotes) : null;
 
   keyElementsByMidi.forEach(({ el, labelEl, pc, black }, midi) => {
@@ -257,28 +322,92 @@ function renderChordsGrid() {
     btn.appendChild(roleSpan);
 
     btn.addEventListener('click', () => {
-      if (selectedChordIndex === idx) {
-        audio.playChord(chord.midiNotes, chord.bassMidi);
-        flashChordKeys(chord.midiNotes);
-      } else {
-        selectedChordIndex = idx;
-        renderAll();
-        audio.playChord(chord.midiNotes, chord.bassMidi);
-        flashChordKeys(chord.midiNotes);
-      }
+      selectedHeardIndex = null;
+      selectedChordIndex = idx;
+      renderAll();
+      audio.playChord(chord.midiNotes, chord.bassMidi);
+      flashChordKeys(chord.midiNotes);
     });
 
     chordsGrid.appendChild(btn);
   });
 
-  if (selectedChordIndex !== null) {
-    const chord = currentKey.chords[selectedChordIndex];
+  const activeChord = getActiveSelectedChord();
+  if (activeChord) {
     chordDetailBanner.classList.remove('hidden');
-    chordDetailTitle.textContent = `${chord.fullName}:`;
-    chordDetailNotes.textContent = `Press ${chord.noteNames.join(' – ')}`;
+    chordDetailTitle.textContent = `${activeChord.fullName}:`;
+    chordDetailNotes.textContent = `Press ${activeChord.noteNames.join(' – ')}`;
   } else {
     chordDetailBanner.classList.add('hidden');
   }
+}
+
+function renderChordsHeardAndSheet() {
+  const heardList = currentSketch.chordsHeard || [];
+  chordsHeardFlow.innerHTML = '';
+
+  if (currentSketch.isLiveSketch) {
+    heardModeBadge.textContent = 'Heard in Song';
+    heardModeBadge.className = 'badge badge-live';
+  } else {
+    heardModeBadge.textContent = 'Common Key Loop';
+    heardModeBadge.className = 'badge badge-preview';
+  }
+
+  heardList.forEach((hc, idx) => {
+    if (idx > 0) {
+      const arrow = document.createElement('span');
+      arrow.className = 'heard-arrow';
+      arrow.textContent = '→';
+      arrow.setAttribute('aria-hidden', 'true');
+      chordsHeardFlow.appendChild(arrow);
+    }
+
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'heard-chord-pill' + (selectedHeardIndex === idx ? ' is-selected' : '');
+    pill.textContent = hc.symbol;
+
+    pill.addEventListener('click', () => {
+      // Check if this chord matches one of the 6 main jam chords so both stay in sync
+      const mainIdx = currentKey.chords.findIndex((c) => c.symbol === hc.symbol);
+      if (mainIdx >= 0) {
+        selectedChordIndex = mainIdx;
+        selectedHeardIndex = idx;
+      } else {
+        selectedChordIndex = null;
+        selectedHeardIndex = idx;
+      }
+      const triad = buildTriadObjectForRoot(hc.rootPc, hc.quality);
+      renderAll();
+      audio.playChord(triad.midiNotes, triad.bassMidi);
+      flashChordKeys(triad.midiNotes);
+    });
+
+    chordsHeardFlow.appendChild(pill);
+  });
+
+  // Update Warm Ivory Music Paper Header & Grand-Staff SVG
+  const titleLabel = loadedSavedSongTitle
+    ? loadedSavedSongTitle
+    : currentSketch.isLiveSketch
+      ? `Spied Song in ${currentKey.name}`
+      : `${currentKey.name} Solo Piano Sketch`;
+
+  const loopSymbols = heardList.map((c) => c.symbol).join(' – ');
+  sheetPaperTitle.textContent = titleLabel;
+  sheetPaperMeta.textContent = `Key of ${currentKey.name} · Chords: ${loopSymbols}`;
+
+  renderSheetMusicSVG(sheetMusicCanvas, currentSketch, currentKey, activeMeasureHighlight);
+}
+
+function updateActiveMeasureHighlightOnly(measureIdx) {
+  activeMeasureHighlight = measureIdx;
+  const rects = sheetMusicCanvas.querySelectorAll('.sheet-measure-hl');
+  rects.forEach((r) => {
+    const idx = Number(r.dataset.measure);
+    r.classList.toggle('is-active', idx === measureIdx);
+  });
 }
 
 function renderKeyCard() {
@@ -330,9 +459,12 @@ function renderSavedSongs() {
     titleSpan.className = 'saved-song-title';
     titleSpan.textContent = item.title;
 
+    const chordSummary = item.sketch && item.sketch.chordsHeard
+      ? ' · ' + item.sketch.chordsHeard.map((c) => c.symbol).join('–')
+      : '';
     const metaSpan = document.createElement('span');
     metaSpan.className = 'saved-song-meta';
-    metaSpan.textContent = formatSavedTimestamp(item.savedAt);
+    metaSpan.textContent = formatSavedTimestamp(item.savedAt) + chordSummary;
 
     infoDiv.appendChild(titleSpan);
     infoDiv.appendChild(metaSpan);
@@ -345,8 +477,11 @@ function renderSavedSongs() {
     mainBtn.appendChild(keyPill);
 
     mainBtn.addEventListener('click', () => {
+      audio.stopSketchPlayback();
       currentKey = getKeyDetails(item.rootPc, item.mode);
+      currentSketch = item.sketch || buildDefaultSketchForKey(currentKey);
       selectedChordIndex = null;
+      selectedHeardIndex = null;
       keySourceMode = 'saved';
       loadedSavedSongId = item.id;
       loadedSavedSongTitle = item.title;
@@ -396,6 +531,7 @@ function renderAll() {
   renderKeyCard();
   renderPianoHighlights();
   renderChordsGrid();
+  renderChordsHeardAndSheet();
   renderSavedSongs();
 }
 
@@ -410,6 +546,7 @@ function handleSaveSong(e) {
     rootPc: currentKey.rootPc,
     mode: currentKey.mode,
     keyName: currentKey.name,
+    sketch: currentSketch,
     savedAt: Date.now()
   };
 
@@ -453,7 +590,7 @@ function updateSoundMeter(level, active) {
   });
 }
 
-function handleListeningResult({ tooQuiet, result }) {
+function handleListeningResult({ tooQuiet, result, windowChromas, windowMelodies }) {
   listenBtn.classList.remove('is-listening');
   listenBtnLabel.textContent = 'Listen Again';
   listenBtnSub.textContent = '12 sec room scan';
@@ -468,10 +605,12 @@ function handleListeningResult({ tooQuiet, result }) {
   }
 
   statusText.classList.remove('status-warn');
-  statusText.innerHTML = `Locked onto <strong>${result.key.name}</strong>! Type a note below to <strong>Save</strong> or tap any chord.`;
+  statusText.innerHTML = `Locked onto <strong>${result.key.name}</strong>! Scroll down to play the <strong>Solo Piano Sketch</strong> or save it.`;
 
   currentKey = result.key;
+  currentSketch = buildPianoSketchFromScan(currentKey, windowChromas, windowMelodies);
   selectedChordIndex = null;
+  selectedHeardIndex = null;
   keySourceMode = 'live';
   loadedSavedSongId = null;
   loadedSavedSongTitle = null;
@@ -483,6 +622,7 @@ function handleListeningResult({ tooQuiet, result }) {
 }
 
 function toggleListening() {
+  audio.stopSketchPlayback();
   if (audio.isListening) {
     audio.stopListening(handleListeningResult);
     return;
@@ -539,6 +679,7 @@ finishEarlyBtn.addEventListener('click', () => {
 
 playScaleBtn.addEventListener('click', () => {
   selectedChordIndex = null;
+  selectedHeardIndex = null;
   renderAll();
   audio.playScalePreview(currentKey.scalePreviewMidi, (midi) => {
     activeScaleStepMidi = midi;
@@ -547,11 +688,13 @@ playScaleBtn.addEventListener('click', () => {
 });
 
 cousinKeyBtn.addEventListener('click', () => {
+  audio.stopSketchPlayback();
   const { rootPc, mode } = currentKey.relativeKey;
   currentKey = getKeyDetails(rootPc, mode);
+  currentSketch = buildDefaultSketchForKey(currentKey);
   selectedChordIndex = null;
+  selectedHeardIndex = null;
   if (loadedSavedSongId) {
-    // Also update the saved song if user immediately flips its cousin key? Keep non-destructive unless saved!
     keySourceMode = 'preview';
     loadedSavedSongId = null;
     loadedSavedSongTitle = null;
@@ -562,7 +705,33 @@ cousinKeyBtn.addEventListener('click', () => {
 
 clearChordBtn.addEventListener('click', () => {
   selectedChordIndex = null;
+  selectedHeardIndex = null;
   renderAll();
+});
+
+playSketchBtn.addEventListener('click', () => {
+  if (audio.isPlayingSketch) {
+    audio.stopSketchPlayback();
+    return;
+  }
+  setSketchPlayButtonState(true);
+  audio.playSketch(currentSketch, {
+    onMeasureChange: (mIdx) => {
+      updateActiveMeasureHighlightOnly(mIdx);
+    },
+    onKeyFlash: (midis) => {
+      flashChordKeys(midis);
+    },
+    onFinish: () => {
+      setSketchPlayButtonState(false);
+      updateActiveMeasureHighlightOnly(-1);
+    }
+  });
+});
+
+printSketchBtn.addEventListener('click', () => {
+  audio.stopSketchPlayback();
+  window.print();
 });
 
 saveSongForm.addEventListener('submit', handleSaveSong);

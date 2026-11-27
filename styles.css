@@ -860,3 +860,239 @@ html, body {
 .footer-refresh-btn:active {
   color: var(--text-primary);
 }
+
+/* Chords Heard Timeline */
+.chords-heard-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.heard-chord-pill {
+  background: var(--bg-card-elevated);
+  color: var(--text-primary);
+  border: 1px solid rgba(45, 212, 191, 0.32);
+  border-radius: 10px;
+  padding: 8px 13px;
+  font-size: 0.98rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.heard-chord-pill:active {
+  transform: scale(0.95);
+}
+
+.heard-chord-pill.is-selected {
+  background: var(--teal-soft);
+  border-color: var(--teal-bright);
+  color: var(--teal-bright);
+}
+
+.heard-arrow {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  user-select: none;
+}
+
+/* Solo Piano Sheet Music Card & Warm Ivory Music Paper */
+.sheet-header {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.sheet-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sheet-play-btn {
+  background: linear-gradient(180deg, var(--amber-bright) 0%, var(--amber) 100%);
+  color: #1f1300;
+  border: none;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.sheet-play-btn.is-playing {
+  background: linear-gradient(180deg, var(--teal-bright) 0%, var(--teal) 100%);
+  color: #042f2e;
+}
+
+.sheet-print-btn {
+  padding: 8px 10px;
+  font-size: 0.76rem;
+}
+
+.sheet-paper {
+  background: #fdfaf2;
+  color: #18181b;
+  border-radius: 12px;
+  padding: 12px 10px 8px;
+  border: 1px solid #e7e0ce;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.sheet-paper-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px 6px;
+  border-bottom: 1px solid #e5dec9;
+  margin-bottom: 4px;
+}
+
+.sheet-paper-title {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #18181b;
+  letter-spacing: -0.01em;
+}
+
+.sheet-paper-meta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #52525b;
+  margin-top: 1px;
+}
+
+.sheet-paper-brand {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #a16207;
+}
+
+.sheet-canvas-wrap {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.sheet-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.staff-line {
+  stroke: #3f3f46;
+  stroke-width: 1.05;
+}
+
+.bar-line {
+  stroke: #27272a;
+  stroke-width: 1.25;
+}
+
+.bar-line-bold {
+  stroke: #18181b;
+  stroke-width: 2.2;
+}
+
+.bar-line-final {
+  stroke: #18181b;
+  stroke-width: 3.2;
+}
+
+.ledger-line {
+  stroke: #27272a;
+  stroke-width: 1.3;
+}
+
+.note-stem {
+  stroke: #18181b;
+  stroke-width: 1.55;
+  stroke-linecap: round;
+}
+
+.note-head-quarter {
+  fill: #18181b;
+}
+
+.note-head-half {
+  fill: #fdfaf2;
+  stroke: #18181b;
+  stroke-width: 1.85;
+}
+
+.note-accidental {
+  font-size: 13.5px;
+  font-weight: 700;
+  fill: #18181b;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Symbol", serif;
+}
+
+.time-sig-txt {
+  font-size: 15px;
+  font-weight: 800;
+  fill: #18181b;
+  text-anchor: middle;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.sheet-chord-symbol {
+  font-size: 14px;
+  font-weight: 800;
+  fill: #0f766e;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+}
+
+.sheet-measure-hl {
+  fill: transparent;
+  stroke: transparent;
+  transition: fill 0.14s ease, stroke 0.14s ease;
+}
+
+.sheet-measure-hl.is-active {
+  fill: rgba(245, 158, 11, 0.22);
+  stroke: rgba(217, 119, 6, 0.55);
+  stroke-width: 1.5;
+}
+
+/* Clean Black-on-White Print / Save PDF Layout */
+@media print {
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    min-height: auto;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .app-shell {
+    max-width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  .sheet-card {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+
+  .sheet-paper {
+    background: #ffffff !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 12px 4px !important;
+  }
+
+  .note-head-half {
+    fill: #ffffff !important;
+  }
+
+  .sheet-measure-hl {
+    display: none !important;
+  }
+}

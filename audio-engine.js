@@ -1,15 +1,12 @@
-// JamSpy - Microphone Key Listener & Warm Acoustic Piano Synthesizer
+// JamSpy - Microphone Key Listener, Melody Tracker & Two-Hand Piano Player
 
-import { midiToFreq, detectKeyStable } from './music-theory.js?v=7';
+import { midiToFreq, detectKeyStable } from './music-theory.js?v=8';
 
 export class AudioEngine {
   constructor() {
-    // Dedicated context for playing piano notes/chords
     this.audioCtx = null;
     this.masterGain = null;
 
-    // Separate fresh context created per microphone scan so playing chords
-    // or switching apps on iPhone never leaves the mic muted/interrupted!
     this.listenCtx = null;
     this.micStream = null;
     this.micSource = null;
@@ -24,8 +21,14 @@ export class AudioEngine {
     this.bassChromaSum = new Float64Array(12);
     this.windowChromas = [];
     this.windowBasses = [];
+    this.windowMelodies = [];
     this.musicalFrames = 0;
     this.totalFrames = 0;
+
+    // Two-hand sheet music playback state
+    this.isPlayingSketch = false;
+    this.sketchTimers = [];
+    this.onSketchStopCallback = null;
   }
 
   ensureContext() {
@@ -45,13 +48,8 @@ export class AudioEngine {
     return this.audioCtx;
   }
 
-  /**
-   * Plays a warm, realistic piano-style note using layered harmonics
-   * and a soft hammer-felt lowpass envelope (no external audio files needed).
-   */
   playPianoNote(midi, duration = 1.15, velocity = 0.75, startDelay = 0) {
     const ctx = this.ensureContext();
-    // Use 'auto' (never 'playback', which disables subsequent mic capture on iOS WebKit!)
     if (navigator.audioSession && !this.isListening) {
       try { navigator.audioSession.type = 'auto'; } catch (_) { /* ignore */ }
     }
@@ -118,6 +116,7 @@ export class AudioEngine {
   }
 
   playScalePreview(midiList, onStep = null) {
+    this.stopSketchPlayback();
     this.ensureContext();
     const stepSeconds = 0.16;
     midiList.forEach((midi, idx) => {
@@ -133,11 +132,81 @@ export class AudioEngine {
   }
 
   /**
-   * Starts listening to the room microphone using a brand-new dedicated AudioContext
-   * and clean pre-amp boost so iPhone app-switching or chord playback never mutes the mic,
-   * and softer 1950s/60s Jazz & Classical recordings register clearly from across the room.
+   * Plays a full Two-Hand Solo Piano Sketch (Treble melody + Bass chords)
+   * with instant stop capability and measure-by-measure visual highlighting.
    */
+  playSketch(sketch, { onMeasureChange, onKeyFlash, onFinish } = {}) {
+    this.stopSketchPlayback();
+    if (!sketch || !sketch.measures || sketch.measures.length === 0) return;
+
+    this.ensureContext();
+    this.isPlayingSketch = true;
+    this.onSketchStopCallback = onFinish || null;
+
+    const bpm = sketch.bpm || 102;
+    const beatMs = (60 / bpm) * 1000;
+    const beatSec = 60 / bpm;
+
+    sketch.measures.forEach((measure, mIdx) => {
+      const measureStartMs = mIdx * 4 * beatMs;
+
+      // Highlight current measure on sheet music
+      const mTimer = setTimeout(() => {
+        if (!this.isPlayingSketch) return;
+        if (onMeasureChange) onMeasureChange(mIdx);
+      }, measureStartMs);
+      this.sketchTimers.push(mTimer);
+
+      // Schedule Left-Hand accompaniment
+      for (const lh of measure.leftHand) {
+        const tMs = measureStartMs + lh.beat * beatMs;
+        const durSec = lh.durationBeats * beatSec * 0.95;
+        const timer = setTimeout(() => {
+          if (!this.isPlayingSketch) return;
+          lh.midis.forEach((m, i) => {
+            this.playPianoNote(m, durSec, 0.56, i * 0.015);
+          });
+          if (onKeyFlash) onKeyFlash(lh.midis);
+        }, tMs);
+        this.sketchTimers.push(timer);
+      }
+
+      // Schedule Right-Hand melody
+      for (const rh of measure.rightHand) {
+        const tMs = measureStartMs + rh.beat * beatMs;
+        const durSec = rh.durationBeats * beatSec * 0.92;
+        const timer = setTimeout(() => {
+          if (!this.isPlayingSketch) return;
+          this.playPianoNote(rh.midi, durSec, 0.85, 0);
+          if (onKeyFlash) onKeyFlash([rh.midi]);
+        }, tMs);
+        this.sketchTimers.push(timer);
+      }
+    });
+
+    const totalMs = sketch.measures.length * 4 * beatMs + 120;
+    const endTimer = setTimeout(() => {
+      this.stopSketchPlayback();
+    }, totalMs);
+    this.sketchTimers.push(endTimer);
+  }
+
+  stopSketchPlayback() {
+    if (this.sketchTimers.length > 0) {
+      this.sketchTimers.forEach((t) => clearTimeout(t));
+      this.sketchTimers = [];
+    }
+    const wasPlaying = this.isPlayingSketch;
+    this.isPlayingSketch = false;
+    const cb = this.onSketchStopCallback;
+    this.onSketchStopCallback = null;
+    if (wasPlaying && cb) {
+      cb();
+    }
+  }
+
   async startListening({ durationMs = 12000, onProgress, onComplete, onError }) {
+    this.stopSketchPlayback();
     if (this.isListening) {
       this.cleanupStream();
     }
@@ -147,7 +216,6 @@ export class AudioEngine {
         try { navigator.audioSession.type = 'play-and-record'; } catch (_) { /* ignore */ }
       }
 
-      // Create a fresh AudioContext inside the tap gesture before awaiting getUserMedia
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       const listenCtx = new AudioContextClass();
       this.listenCtx = listenCtx;
@@ -172,7 +240,6 @@ export class AudioEngine {
       this.micStream = stream;
       this.micSource = listenCtx.createMediaStreamSource(stream);
 
-      // +8 dB clean digital pre-amp boost for softer vintage Jazz/Classical tracks at 10+ feet
       this.micBoost = listenCtx.createGain();
       this.micBoost.gain.value = 2.5;
 
@@ -181,7 +248,6 @@ export class AudioEngine {
       this.analyser.smoothingTimeConstant = 0.35;
       this.freqBuffer = new Float32Array(this.analyser.frequencyBinCount);
 
-      // Connect through a zero-gain sink to destination so iOS Safari actively pulls mic audio frames
       this.silentSink = listenCtx.createGain();
       this.silentSink.gain.value = 0;
 
@@ -194,6 +260,7 @@ export class AudioEngine {
       this.bassChromaSum.fill(0);
       this.windowChromas = [];
       this.windowBasses = [];
+      this.windowMelodies = [];
       this.musicalFrames = 0;
       this.totalFrames = 0;
       this.isListening = true;
@@ -202,6 +269,12 @@ export class AudioEngine {
       let lastWindowTime = startTime;
       const currentSliceChroma = new Float64Array(12);
       const currentSliceBass = new Float64Array(12);
+
+      const MIN_MIDI = 31;
+      const MAX_MIDI = 78;
+      const NUM_MIDI = MAX_MIDI - MIN_MIDI + 1; // 48
+      const noteSalience = new Float64Array(NUM_MIDI);
+      const currentSliceMelodySal = new Float64Array(NUM_MIDI);
       let currentSliceFrames = 0;
 
       const sampleRate = listenCtx.sampleRate;
@@ -211,12 +284,6 @@ export class AudioEngine {
       const maxSpecBin = Math.min(this.freqBuffer.length - 4, Math.ceil(2700 / binHz));
       const linMag = new Float32Array(maxSpecBin + 20);
       const cleanMag = new Float32Array(maxSpecBin + 20);
-
-      // Strictly symmetric 4-octave pitch span: MIDI 31 (G1) through MIDI 78 (F#5) = 48 notes
-      const MIN_MIDI = 31;
-      const MAX_MIDI = 78;
-      const NUM_MIDI = MAX_MIDI - MIN_MIDI + 1;
-      const noteSalience = new Float64Array(NUM_MIDI);
 
       const sampleHarmonicPeak = (freqHz) => {
         const centerBin = freqHz / binHz;
@@ -253,10 +320,22 @@ export class AudioEngine {
               }
             }
             this.windowBasses.push(normBassSlice);
+
+            // Extract top 3 upper-register melody candidates (MIDI 57 = A3 .. 78 = F#5)
+            const melCands = [];
+            for (let m = 57; m <= MAX_MIDI; m++) {
+              const sVal = currentSliceMelodySal[m - MIN_MIDI];
+              if (sVal > 0) {
+                melCands.push({ midi: m, strength: sVal });
+              }
+            }
+            melCands.sort((a, b) => b.strength - a.strength);
+            this.windowMelodies.push({ candidates: melCands.slice(0, 3) });
           }
 
           currentSliceChroma.fill(0);
           currentSliceBass.fill(0);
+          currentSliceMelodySal.fill(0);
           currentSliceFrames = 0;
           lastWindowTime = nowTime;
         }
@@ -265,7 +344,6 @@ export class AudioEngine {
       const analyzeFrame = () => {
         if (!this.isListening) return;
 
-        // Auto-recover if iOS briefly interrupts the context mid-listen
         if (listenCtx.state === 'suspended' || listenCtx.state === 'interrupted') {
           listenCtx.resume().catch(() => {});
         }
@@ -285,7 +363,6 @@ export class AudioEngine {
           linMag[b] = db > -98 ? Math.pow(10, db / 20) : 0;
         }
 
-        // Running-sum spectral whitening
         cleanMag.fill(0);
         const halfWin = 12;
         let winSum = 0;
@@ -365,6 +442,9 @@ export class AudioEngine {
           if (midi <= 54) {
             frameBass[pc] += energy;
           }
+          if (midi >= 57) {
+            currentSliceMelodySal[idx] += energy;
+          }
         }
 
         const hearingMusic = frameTotal > 1e-5 && maxDb > -88;
@@ -422,19 +502,25 @@ export class AudioEngine {
     const bassArr = Array.from(this.bassChromaSum);
     const slices = this.windowChromas.slice();
     const bassSlices = this.windowBasses.slice();
+    const melodySlices = this.windowMelodies.slice();
 
     this.cleanupStream();
 
     if (!hadEnoughMusic) {
       if (onComplete) {
-        onComplete({ tooQuiet: true, result: null });
+        onComplete({ tooQuiet: true, result: null, windowChromas: [], windowMelodies: [] });
       }
       return;
     }
 
     const result = detectKeyStable(chromaArr, bassArr, slices, bassSlices);
     if (onComplete) {
-      onComplete({ tooQuiet: !result, result });
+      onComplete({
+        tooQuiet: !result,
+        result,
+        windowChromas: slices,
+        windowMelodies: melodySlices
+      });
     }
   }
 

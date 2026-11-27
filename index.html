@@ -9,13 +9,13 @@
   <meta name="theme-color" content="#0f131d" />
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="./apple-touch-icon.png" />
-  <title>JamSpy — Live Song Key &amp; Piano Jam Guide</title>
-  <link rel="stylesheet" href="./styles.css?v=7" />
+  <title>JamSpy — Live Song Key &amp; Solo Piano Sheet Music</title>
+  <link rel="stylesheet" href="./styles.css?v=8" />
 </head>
 <body>
   <div class="app-shell">
     <!-- Top Bar -->
-    <header class="top-bar">
+    <header class="top-bar no-print">
       <div class="brand">
         <span class="brand-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
@@ -24,7 +24,7 @@
         </span>
         <div>
           <h1 class="brand-title">JamSpy</h1>
-          <p class="brand-subtitle">Live Key &amp; Jam Guide</p>
+          <p class="brand-subtitle">Live Key &amp; Piano Sketch</p>
         </div>
       </div>
 
@@ -35,7 +35,7 @@
     </header>
 
     <!-- Listen / Spy Control Section -->
-    <section class="spy-section" aria-label="Song Listener">
+    <section class="spy-section no-print" aria-label="Song Listener">
       <div class="listen-ring-wrap">
         <svg class="progress-ring" viewBox="0 0 156 156" aria-hidden="true">
           <circle class="progress-ring-track" cx="78" cy="78" r="68" />
@@ -76,7 +76,7 @@
     </section>
 
     <!-- Key Reveal Card -->
-    <section id="keyCard" class="card key-card" aria-live="polite">
+    <section id="keyCard" class="card key-card no-print" aria-live="polite">
       <div class="key-card-top">
         <span id="keySourceBadge" class="badge badge-preview">Sample Key Preview</span>
         <span id="confidenceBadge" class="confidence-pill hidden">Strong Lock</span>
@@ -124,7 +124,7 @@
     </section>
 
     <!-- Interactive Piano Cheat Sheet -->
-    <section class="card piano-card" aria-label="Interactive Piano Keyboard">
+    <section class="card piano-card no-print" aria-label="Interactive Piano Keyboard">
       <div class="section-header">
         <div>
           <h2 class="section-title">Safe Keys to Play</h2>
@@ -149,7 +149,7 @@
     </section>
 
     <!-- 6 Main Jam Chords Grid -->
-    <section class="card chords-card" aria-label="Main Chords in This Key">
+    <section class="card chords-card no-print" aria-label="Main Chords in This Key">
       <div class="section-header">
         <div>
           <h2 class="section-title">Main Jam Chords</h2>
@@ -167,33 +167,86 @@
       </div>
     </section>
 
+    <!-- Chords Heard Timeline Card -->
+    <section class="card heard-card no-print" aria-label="Chords Heard in Song">
+      <div class="section-header saved-header">
+        <div>
+          <h2 class="section-title">Chords Heard</h2>
+          <p class="section-hint">
+            Chord loop in order · Tap any chord to hear &amp; view fingers
+          </p>
+        </div>
+        <span id="heardModeBadge" class="badge badge-preview">Sample Loop</span>
+      </div>
+
+      <div id="chordsHeardFlow" class="chords-heard-flow"></div>
+    </section>
+
+    <!-- Solo Piano Sketch Sheet Music Card -->
+    <section id="sheetCard" class="card sheet-card" aria-label="Solo Piano Sheet Music Sketch">
+      <div class="section-header sheet-header no-print">
+        <div>
+          <h2 class="section-title">Solo Piano Sketch</h2>
+          <p id="sheetSubtitle" class="section-hint">
+            Right-hand melody + left-hand chords
+          </p>
+        </div>
+
+        <div class="sheet-actions">
+          <button id="playSketchBtn" class="action-pill-btn sheet-play-btn" type="button">
+            <svg id="playSketchIcon" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+              <path d="M8 5.14v14l11-7-11-7z" />
+            </svg>
+            <span id="playSketchLabel">Play Sketch</span>
+          </button>
+
+          <button id="printSketchBtn" class="ghost-small-btn sheet-print-btn" type="button" title="Print or Save as PDF">
+            Print / PDF
+          </button>
+        </div>
+      </div>
+
+      <!-- Warm Ivory Music Paper -->
+      <div class="sheet-paper">
+        <div class="sheet-paper-header">
+          <div>
+            <div id="sheetPaperTitle" class="sheet-paper-title">JamSpy Piano Sketch</div>
+            <div id="sheetPaperMeta" class="sheet-paper-meta">Key of G Major · Loop: G – D – Em – C</div>
+          </div>
+          <span class="sheet-paper-brand">JamSpy</span>
+        </div>
+
+        <div id="sheetMusicCanvas" class="sheet-canvas-wrap"></div>
+      </div>
+    </section>
+
     <!-- Saved Songs List (Stored Locally on This Phone/Device) -->
-    <section class="card saved-card" aria-label="Saved Songs">
+    <section class="card saved-card no-print" aria-label="Saved Songs">
       <div class="section-header saved-header">
         <div>
           <h2 class="section-title">Saved Songs</h2>
           <p class="section-hint">
-            Tap any saved song to load its key &amp; chords
+            Tap any saved song to load its key, chords &amp; sheet music
           </p>
         </div>
         <span id="savedCountBadge" class="saved-count-badge">0 saved</span>
       </div>
 
       <p id="savedEmptyState" class="saved-empty">
-        No saved songs yet—type a quick note above and tap <strong>Save</strong> so you don't forget a key!
+        No saved songs yet—type a quick note above and tap <strong>Save</strong> so you don't forget a song!
       </p>
 
       <div id="savedSongsList" class="saved-list hidden"></div>
     </section>
 
     <!-- Subtle Version & Instant Refresh Footer -->
-    <footer class="app-footer">
+    <footer class="app-footer no-print">
       <button id="appRefreshBtn" class="footer-refresh-btn" type="button">
-        JamSpy v1.7 · Tap to Refresh
+        JamSpy v2.0 · Tap to Refresh
       </button>
     </footer>
   </div>
 
-  <script type="module" src="./app.js?v=7"></script>
+  <script type="module" src="./app.js?v=8"></script>
 </body>
 </html>
