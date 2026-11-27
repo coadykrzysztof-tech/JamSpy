@@ -1,6 +1,6 @@
 // JamSpy - Microphone Key Listener & Warm Acoustic Piano Synthesizer
 
-import { midiToFreq, detectKeyStable } from './music-theory.js?v=5';
+import { midiToFreq, detectKeyStable } from './music-theory.js?v=6';
 
 export class AudioEngine {
   constructor() {

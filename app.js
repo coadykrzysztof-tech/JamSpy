@@ -1,20 +1,26 @@
-// JamSpy - Main Screen Controller (Step 1: Live Key Finder & Jam Guide)
+// JamSpy - Main Screen Controller (Live Key Finder, Jam Guide & On-Device Saved Songs)
 
 import {
   getKeyDetails,
   getAllKeysList,
   getNoteName,
   isBlackKey
-} from './music-theory.js?v=5';
-import { AudioEngine } from './audio-engine.js?v=5';
+} from './music-theory.js?v=6';
+import { AudioEngine } from './audio-engine.js?v=6';
 
 const audio = new AudioEngine();
+const STORAGE_KEY = 'jamspy_saved_songs_v1';
 
 // App State
-let currentKey = getKeyDetails(7, 'major'); // Default preview: G Major (classic pop/country/rock key)
+let currentKey = getKeyDetails(7, 'major'); // Default preview: G Major
 let selectedChordIndex = null;
-let isLiveDetection = false;
+let keySourceMode = 'preview'; // 'preview' | 'live' | 'saved'
+let loadedSavedSongId = null;
+let loadedSavedSongTitle = null;
 let activeScaleStepMidi = null;
+let pendingDeleteId = null;
+let pendingDeleteTimer = null;
+let savedSongs = loadSavedSongsFromStorage();
 
 // DOM Elements
 const manualKeySelect = document.getElementById('manualKeySelect');
@@ -34,6 +40,10 @@ const scaleNotesDisplay = document.getElementById('scaleNotesDisplay');
 const playScaleBtn = document.getElementById('playScaleBtn');
 const cousinKeyBtn = document.getElementById('cousinKeyBtn');
 
+const saveSongForm = document.getElementById('saveSongForm');
+const saveSongInput = document.getElementById('saveSongInput');
+const saveSongBtn = document.getElementById('saveSongBtn');
+
 const pianoKeyboard = document.getElementById('pianoKeyboard');
 const pianoLegendText = document.getElementById('pianoLegendText');
 const clearChordBtn = document.getElementById('clearChordBtn');
@@ -43,12 +53,52 @@ const chordDetailBanner = document.getElementById('chordDetailBanner');
 const chordDetailTitle = document.getElementById('chordDetailTitle');
 const chordDetailNotes = document.getElementById('chordDetailNotes');
 
-const RING_CIRCUMFERENCE = 2 * Math.PI * 68; // matches r="68" in SVG
+const savedCountBadge = document.getElementById('savedCountBadge');
+const savedEmptyState = document.getElementById('savedEmptyState');
+const savedSongsList = document.getElementById('savedSongsList');
+const appRefreshBtn = document.getElementById('appRefreshBtn');
+
+const RING_CIRCUMFERENCE = 2 * Math.PI * 68;
 
 // Build 2-octave keyboard structure once (C3 = MIDI 48 through C5 = MIDI 72)
 const START_MIDI = 48;
 const END_MIDI = 72;
 const keyElementsByMidi = new Map();
+
+function loadSavedSongsFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function persistSavedSongs() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(savedSongs));
+  } catch (_) {
+    // Ignore private-browsing quota errors gracefully
+  }
+}
+
+function formatSavedTimestamp(ts) {
+  try {
+    const d = new Date(ts);
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+      ' · ' +
+      d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  } catch (_) {
+    return '';
+  }
+}
+
+function buildAutoTitle() {
+  const now = new Date();
+  return 'Spied Song · ' + now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
 
 function initManualPicker() {
   const allKeys = getAllKeysList();
@@ -74,7 +124,9 @@ function initManualPicker() {
   manualKeySelect.addEventListener('change', () => {
     const [pcStr, mode] = manualKeySelect.value.split(':');
     selectedChordIndex = null;
-    isLiveDetection = false;
+    keySourceMode = 'preview';
+    loadedSavedSongId = null;
+    loadedSavedSongTitle = null;
     currentKey = getKeyDetails(Number(pcStr), mode);
     confidenceBadge.classList.add('hidden');
     renderAll();
@@ -86,12 +138,11 @@ function buildPianoDOM() {
   pianoKeyboard.innerHTML = '';
   keyElementsByMidi.clear();
 
-  // First count white keys so black keys position accurately on the seams
   const whiteMidis = [];
   for (let m = START_MIDI; m <= END_MIDI; m++) {
     if (!isBlackKey(m % 12)) whiteMidis.push(m);
   }
-  const totalWhite = whiteMidis.length; // 15 white keys
+  const totalWhite = whiteMidis.length;
 
   let whiteIndex = -1;
   for (let midi = START_MIDI; midi <= END_MIDI; midi++) {
@@ -111,7 +162,6 @@ function buildPianoDOM() {
       btn.className = 'piano-key-white';
     } else {
       btn.className = 'piano-key-black';
-      // Position black key centered between current whiteIndex and whiteIndex + 1
       const seamPercent = ((whiteIndex + 1) / totalWhite) * 100;
       btn.style.left = `calc(${seamPercent}% - 2.25%)`;
     }
@@ -171,7 +221,6 @@ function renderPianoHighlights() {
       el.classList.add('in-chord');
     }
 
-    // Show clean labels on scale notes, chord notes, and C landmarks
     if (inChord || inScale || (!black && pc === 0)) {
       labelEl.textContent = noteName;
     } else {
@@ -209,7 +258,6 @@ function renderChordsGrid() {
 
     btn.addEventListener('click', () => {
       if (selectedChordIndex === idx) {
-        // Replay chord on repeat tap
         audio.playChord(chord.midiNotes, chord.bassMidi);
         flashChordKeys(chord.midiNotes);
       } else {
@@ -239,8 +287,11 @@ function renderKeyCard() {
   cousinKeyBtn.textContent = `Switch to ${currentKey.relativeKey.name} ⇄`;
   manualKeySelect.value = `${currentKey.rootPc}:${currentKey.mode}`;
 
-  if (isLiveDetection) {
+  if (keySourceMode === 'live') {
     keySourceBadge.textContent = 'Spied from Audio';
+    keySourceBadge.className = 'badge badge-live';
+  } else if (keySourceMode === 'saved' && loadedSavedSongTitle) {
+    keySourceBadge.textContent = `Saved: ${loadedSavedSongTitle}`;
     keySourceBadge.className = 'badge badge-live';
   } else {
     keySourceBadge.textContent = 'Key Guide';
@@ -248,10 +299,137 @@ function renderKeyCard() {
   }
 }
 
+function renderSavedSongs() {
+  const count = savedSongs.length;
+  savedCountBadge.textContent = `${count} saved`;
+
+  if (count === 0) {
+    savedEmptyState.classList.remove('hidden');
+    savedSongsList.classList.add('hidden');
+    savedSongsList.innerHTML = '';
+    return;
+  }
+
+  savedEmptyState.classList.add('hidden');
+  savedSongsList.classList.remove('hidden');
+  savedSongsList.innerHTML = '';
+
+  savedSongs.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'saved-row' + (loadedSavedSongId === item.id ? ' is-active' : '');
+
+    const mainBtn = document.createElement('button');
+    mainBtn.type = 'button';
+    mainBtn.className = 'saved-row-main';
+    mainBtn.title = `Load ${item.title} (${item.keyName})`;
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'saved-song-info';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'saved-song-title';
+    titleSpan.textContent = item.title;
+
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'saved-song-meta';
+    metaSpan.textContent = formatSavedTimestamp(item.savedAt);
+
+    infoDiv.appendChild(titleSpan);
+    infoDiv.appendChild(metaSpan);
+
+    const keyPill = document.createElement('span');
+    keyPill.className = 'saved-key-pill';
+    keyPill.textContent = item.keyName;
+
+    mainBtn.appendChild(infoDiv);
+    mainBtn.appendChild(keyPill);
+
+    mainBtn.addEventListener('click', () => {
+      currentKey = getKeyDetails(item.rootPc, item.mode);
+      selectedChordIndex = null;
+      keySourceMode = 'saved';
+      loadedSavedSongId = item.id;
+      loadedSavedSongTitle = item.title;
+      confidenceBadge.classList.add('hidden');
+      renderAll();
+      audio.playChord(currentKey.chords[0].midiNotes, currentKey.chords[0].bassMidi);
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    const isConfirming = pendingDeleteId === item.id;
+    delBtn.className = 'saved-delete-btn' + (isConfirming ? ' confirm-delete' : '');
+    delBtn.textContent = isConfirming ? 'Delete?' : '✕';
+    delBtn.setAttribute('aria-label', isConfirming ? `Confirm delete ${item.title}` : `Delete ${item.title}`);
+
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (pendingDeleteId === item.id) {
+        clearTimeout(pendingDeleteTimer);
+        pendingDeleteId = null;
+        savedSongs = savedSongs.filter((s) => s.id !== item.id);
+        if (loadedSavedSongId === item.id) {
+          loadedSavedSongId = null;
+          loadedSavedSongTitle = null;
+          keySourceMode = 'preview';
+        }
+        persistSavedSongs();
+        renderAll();
+      } else {
+        pendingDeleteId = item.id;
+        clearTimeout(pendingDeleteTimer);
+        pendingDeleteTimer = setTimeout(() => {
+          pendingDeleteId = null;
+          renderSavedSongs();
+        }, 3500);
+        renderSavedSongs();
+      }
+    });
+
+    row.appendChild(mainBtn);
+    row.appendChild(delBtn);
+    savedSongsList.appendChild(row);
+  });
+}
+
 function renderAll() {
   renderKeyCard();
   renderPianoHighlights();
   renderChordsGrid();
+  renderSavedSongs();
+}
+
+function handleSaveSong(e) {
+  e.preventDefault();
+  const typed = saveSongInput.value.trim();
+  const title = typed || buildAutoTitle();
+
+  const entry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title,
+    rootPc: currentKey.rootPc,
+    mode: currentKey.mode,
+    keyName: currentKey.name,
+    savedAt: Date.now()
+  };
+
+  savedSongs.unshift(entry);
+  persistSavedSongs();
+
+  loadedSavedSongId = entry.id;
+  loadedSavedSongTitle = entry.title;
+  keySourceMode = 'saved';
+  saveSongInput.value = '';
+  saveSongInput.blur();
+
+  saveSongBtn.textContent = 'Saved ✓';
+  saveSongBtn.classList.add('is-saved');
+  setTimeout(() => {
+    saveSongBtn.textContent = 'Save';
+    saveSongBtn.classList.remove('is-saved');
+  }, 1400);
+
+  renderAll();
 }
 
 // Listening UI Helpers
@@ -290,11 +468,13 @@ function handleListeningResult({ tooQuiet, result }) {
   }
 
   statusText.classList.remove('status-warn');
-  statusText.innerHTML = `Locked onto <strong>${result.key.name}</strong>! Tap <strong>Hear Key</strong> or any chord below to play along.`;
+  statusText.innerHTML = `Locked onto <strong>${result.key.name}</strong>! Type a note below to <strong>Save</strong> or tap any chord.`;
 
   currentKey = result.key;
   selectedChordIndex = null;
-  isLiveDetection = true;
+  keySourceMode = 'live';
+  loadedSavedSongId = null;
+  loadedSavedSongTitle = null;
 
   confidenceBadge.textContent = `${result.confidenceLabel} (${result.confidence}%)`;
   confidenceBadge.classList.remove('hidden');
@@ -304,7 +484,6 @@ function handleListeningResult({ tooQuiet, result }) {
 
 function toggleListening() {
   if (audio.isListening) {
-    // Cancel if barely started, otherwise lock onto what we've heard so far
     audio.stopListening(handleListeningResult);
     return;
   }
@@ -371,6 +550,12 @@ cousinKeyBtn.addEventListener('click', () => {
   const { rootPc, mode } = currentKey.relativeKey;
   currentKey = getKeyDetails(rootPc, mode);
   selectedChordIndex = null;
+  if (loadedSavedSongId) {
+    // Also update the saved song if user immediately flips its cousin key? Keep non-destructive unless saved!
+    keySourceMode = 'preview';
+    loadedSavedSongId = null;
+    loadedSavedSongTitle = null;
+  }
   renderAll();
   audio.playChord(currentKey.chords[0].midiNotes, currentKey.chords[0].bassMidi);
 });
@@ -378,6 +563,13 @@ cousinKeyBtn.addEventListener('click', () => {
 clearChordBtn.addEventListener('click', () => {
   selectedChordIndex = null;
   renderAll();
+});
+
+saveSongForm.addEventListener('submit', handleSaveSong);
+
+appRefreshBtn.addEventListener('click', () => {
+  const cleanPath = window.location.pathname;
+  window.location.replace(`${cleanPath}?r=${Date.now()}`);
 });
 
 // Boot App

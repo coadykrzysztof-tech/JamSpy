@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="./apple-touch-icon.png" />
   <title>JamSpy — Live Song Key &amp; Piano Jam Guide</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=6" />
 </head>
 <body>
   <div class="app-shell">
@@ -104,6 +104,23 @@
           Switch to E Minor ⇄
         </button>
       </div>
+
+      <!-- Quick Save Song Bar -->
+      <form id="saveSongForm" class="save-song-bar">
+        <input
+          id="saveSongInput"
+          class="save-song-input"
+          type="text"
+          maxlength="60"
+          enterkeyhint="done"
+          autocomplete="off"
+          placeholder="Name or note (e.g. Blown Away, 2nd song at show)..."
+          aria-label="Song name or note to save"
+        />
+        <button id="saveSongBtn" class="save-song-btn" type="submit">
+          Save
+        </button>
+      </form>
     </section>
 
     <!-- Interactive Piano Cheat Sheet -->
@@ -149,8 +166,34 @@
         <span id="chordDetailNotes" class="chord-detail-notes">Press G – B – D</span>
       </div>
     </section>
+
+    <!-- Saved Songs List (Stored Locally on This Phone/Device) -->
+    <section class="card saved-card" aria-label="Saved Songs">
+      <div class="section-header saved-header">
+        <div>
+          <h2 class="section-title">Saved Songs</h2>
+          <p class="section-hint">
+            Tap any saved song to load its key &amp; chords
+          </p>
+        </div>
+        <span id="savedCountBadge" class="saved-count-badge">0 saved</span>
+      </div>
+
+      <p id="savedEmptyState" class="saved-empty">
+        No saved songs yet—type a quick note above and tap <strong>Save</strong> so you don't forget a key!
+      </p>
+
+      <div id="savedSongsList" class="saved-list hidden"></div>
+    </section>
+
+    <!-- Subtle Version & Instant Refresh Footer -->
+    <footer class="app-footer">
+      <button id="appRefreshBtn" class="footer-refresh-btn" type="button">
+        JamSpy v1.6 · Tap to Refresh
+      </button>
+    </footer>
   </div>
 
-  <script type="module" src="./app.js?v=5"></script>
+  <script type="module" src="./app.js?v=6"></script>
 </body>
 </html>
